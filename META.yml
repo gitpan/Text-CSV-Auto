@@ -18,8 +18,8 @@ requires:
   Text::CSV::Separator: 0.20
   Text::CSV_XS: 0.80
   autodie: 2.10
-  perl: 5.10.0
+  perl: v5.10.0
 resources:
   bugtracker: http://rt.cpan.org/Public/Dist/Display.html?Name=Text-CSV-Auto
   repository: git://github.com/bluefeet/Text-CSV-Auto.git
-version: 0.01
+version: 0.02

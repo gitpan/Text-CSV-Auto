@@ -6,5 +6,12 @@ Makefile.PL
 README
 lib/Text/CSV/Auto.pm
 t/00-compile.t
+t/analyze_csv.t
+t/features.csv
+t/format_headers.t
+t/headers.t
+t/max_rows.t
+t/people.csv
 t/release-pod-coverage.t
 t/release-pod-syntax.t
+t/skip_rows.t

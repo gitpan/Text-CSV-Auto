@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 
-BEGIN { require 5.10.0; }
+BEGIN { require v5.10.0; }
 
 use ExtUtils::MakeMaker 6.31;
 
@@ -26,7 +26,7 @@ my %WriteMakefileArgs = (
     'Text::CSV_XS' => '0.80',
     'autodie' => '2.10'
   },
-  'VERSION' => '0.01',
+  'VERSION' => '0.02',
   'test' => {
     'TESTS' => 't/*.t'
   }

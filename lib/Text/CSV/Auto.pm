@@ -1,6 +1,6 @@
 package Text::CSV::Auto;
 BEGIN {
-  $Text::CSV::Auto::VERSION = '0.01';
+  $Text::CSV::Auto::VERSION = '0.02';
 }
 
 =head1 NAME
@@ -46,7 +46,7 @@ You can also get an analysis about the content of the file:
     
     my $headers = analyze_csv( 'path/to/file.csv' );
 
-Which will give you something like this:
+This will give you something like this:
 
     [
         {
@@ -80,7 +80,7 @@ and this module will automatically figure out what kind of separator is
 used and set some good default options for processing the file.
 
 The name CSV is misleading as any variable-width delimited file should
-be fine including TSV files and pipe "|" delimted files to name a few.
+be fine including TSV files and pipe "|" delimited files to name a few.
 
 =cut
 
@@ -111,7 +111,7 @@ and the code reference you pass will be executed with the row hashref as
 the first argument.
 
 Options may be specified as a hashref.  Any options that L<Text::CSV_XS>
-supports, such as sep_char and binary, can be set.  Some sain options are
+supports, such as sep_char and binary, can be set.  Some sane options are
 set by default but can be overriden:
 
     binary    => 1 # Assume there is binary data.
@@ -121,11 +121,7 @@ set by default but can be overriden:
 Read the L<Text::CSV_XS> docs to see the many options that it supports.
 
 There are additional options that can be set that affect how this module
-works.  Some sain defaults have also been set for these:
-
-    format_headers => 1
-
-Read below about the additional options that are supported:
+works.  Read below about the additional options that are supported:
 
 =head3 headers
 
@@ -138,12 +134,12 @@ specify an arrayref of header names that you would like to use.
 =head3 format_headers
 
 When the first row is pulled from the CSV to determine the headers
-this option will cause them to be formatted to be more consistant
+this option will cause them to be formatted to be more consistent
 and remove duplications.  For example, if this were the headers:
 
     Parents Name,Parent Age,Child Name,Child Age,Child Name,Child Age
 
-The headers would be tranformed too:
+The headers would be transformed too:
 
     parent_name,parent_age,child_name,child_age,child_name_2,child_age_2
 
@@ -154,7 +150,7 @@ This option is enabled by default.  You can turn it off if you want:
 =head3 skip_rows
 
 An arrayref of row numbers to skip can be specified.  This is useful for
-CSV files that contain anciliary rows that you don't want to be processed.
+CSV files that contain ancillary rows that you don't want to be processed.
 For example, you could ignore the 2nd row and the 5th through the 10th rows:
 
     skip_rows => [2, 5..10]
@@ -200,6 +196,7 @@ sub process_csv {
         if (!$headers) {
             $headers = $row;
             $headers = _format_headers( $headers ) if $format_headers;
+            $row_number --;
             next;
         }
 
@@ -264,42 +261,62 @@ Returns an array of hashes where each hash represents a header in
 the CSV file.  The hash will contain a lot of different meta data
 about the data that was found in the rows for that header.
 
-Supports the exact same options as process_csv().
-
-The meta data can contain any of the follow values.
-
-=over
-
-=item string => 1: A value did not look like a number.
-
-=item string_length => ...: The length of the largest value.
-
-=item integer => 1: A value looked like a integer (non-decimal number).
-
-=item integer_length => ...: The number of integer digits in the largest value.
-
-=item decimal => 1: A value looked like a decimal.
-
-=item fractional_length => ...: The number of decimal digits in the value with the most decimal places.
-
-=item max => ...: The maximum number value found.
-
-=item min => ...: The minimum number value found.
-
-=item mdy_date => 1: A value had the format of "MM/DD/YYYY".
-
-=item ymd_date => 1: A value had the format of "YYYY-MM-DD".
-
-=item unsigned => 1: A negative number was found.
-
-=item undef => 1: An empty value was found.
-
-=back
-
 It is possible that within the same header that multiple data types are found,
 such as finding a integer value on one row then a string value on another row
 within the same header.  In a case like this both the integer=>1 and string=>1
 flags would be set.
+
+Supports the exact same options as process_csv().
+
+The meta data can contain any of the follow values:
+
+=head3 string => 1
+
+A value did not look like a number.
+
+=head3 string_length => ...
+
+The length of the largest value.
+
+=head3 integer => 1
+
+A value looked like a integer (non-decimal number).
+
+=head3 integer_length => ...
+
+The number of integer digits in the largest value.
+
+=head3 decimal => 1
+
+A value looked like a decimal.
+
+=head3 fractional_length => ...
+
+The number of decimal digits in the value with the most decimal places.
+
+=head3 max => ...
+
+The maximum number value found.
+
+=head3 min => ...
+
+The minimum number value found.
+
+=head3 mdy_date => 1
+
+A value had the format of "MM/DD/YYYY".
+
+=head3 ymd_date => 1
+
+A value had the format of "YYYY-MM-DD".
+
+=head3 unsigned => 1
+
+A negative number was found.
+
+=head3 undef => 1
+
+An empty value was found.
 
 =cut
 
