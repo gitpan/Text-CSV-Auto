@@ -94,7 +94,7 @@ my $expected = [
             'min' => '-114.5682983',
             'max' => '-109.4870088',
             'decimal' => 1,
-            'unsigned' => 1,
+            'signed' => 1,
             'integer_length' => 3,
             'header' => 'primary_longitude'
           },

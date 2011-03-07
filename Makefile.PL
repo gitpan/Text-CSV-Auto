@@ -26,12 +26,13 @@ my %WriteMakefileArgs = (
     'Clone' => '0.31',
     'IO' => '1.25',
     'List::MoreUtils' => '0.30',
+    'Module::Pluggable' => '3.9',
     'Moose' => '1.24',
     'Text::CSV' => '1.21',
     'Text::CSV::Separator' => '0.20',
     'autodie' => '2.10'
   },
-  'VERSION' => '0.04',
+  'VERSION' => '0.05',
   'test' => {
     'TESTS' => 't/*.t'
   }

@@ -1,5 +1,10 @@
 Revision history for Perl extension Text::CSV::Auto.
 
+0.05      2011-03-07
+ - Build out framework for exporters.
+ - Created CSV exporter as a proof-of-concept.
+ - Support plugins in Text::CSV::Auto::Plugin.
+
 0.04      2011-03-07
  - More documentation cleanup.
  - Rearrange the headers behavior so that when headers are pulled from the

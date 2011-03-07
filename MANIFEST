@@ -5,8 +5,14 @@ META.yml
 Makefile.PL
 README
 lib/Text/CSV/Auto.pm
+lib/Text/CSV/Auto/ExportTo.pm
+lib/Text/CSV/Auto/ExportTo/CSV.pm
+lib/Text/CSV/Auto/ExportToDB.pm
+lib/Text/CSV/Auto/Plugin/ExportToCSV.pm
 t/00-compile.t
-t/analyze_csv.t
+t/analyze.t
+t/export.tsv
+t/export_to_csv.t
 t/features.csv
 t/format_headers.t
 t/headers.t

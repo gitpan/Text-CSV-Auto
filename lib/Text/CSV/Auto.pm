@@ -1,6 +1,6 @@
 package Text::CSV::Auto;
 BEGIN {
-  $Text::CSV::Auto::VERSION = '0.04';
+  $Text::CSV::Auto::VERSION = '0.05';
 }
 use Moose;
 
@@ -56,7 +56,7 @@ used and set some good default options for processing the file.
 The name CSV is misleading as any variable-width delimited file should
 be fine including TSV files and pipe "|" delimited files to name a few.
 
-Please install L<Text::CSV_XS> to get the best possible performance.
+Install L<Text::CSV_XS> to get the best possible performance.
 
 =cut
 
@@ -71,6 +71,16 @@ use Clone qw( clone );
 use IO::File;
 
 use Moose::Util::TypeConstraints;
+
+use Module::Pluggable::Object;
+{
+    my $finder = Module::Pluggable::Object->new(
+        search_path => 'Text::CSV::Auto::Plugin',
+    );
+    foreach my $class ($finder->plugins()) {
+        with $class;
+    }
+}
 
 around BUILDARGS => sub {
     my $orig = shift;
@@ -130,7 +140,7 @@ sub _build_separator {
     return $chars[0];
 }
 
-=head2 parser_options
+=head2 csv_options
 
 Set this to a hashref of extra options that you'd like to have
 passed down to the underlying L<Text::CSV> parser.
@@ -139,20 +149,20 @@ Read the L<Text::CSV> docs to see the many options that it supports.
 
 =cut
 
-has 'parser_options' => (
+has 'csv_options' => (
     is      => 'ro',
     isa     => 'HashRef',
     default => sub{ {} },
 );
 
-=head2 parser
+=head2 csv
 
 This contains an instance of the L<Text::CSV> object that is used
 to parse the CSV file.  You may pass in your own parser object.
 If you don't then one will be instantiated for you with the
-parser_options().
+csv_options().
 
-If not set already in parser_options, the following defaults
+If not set already in csv_options, the following defaults
 will be used:
 
     binary    => 1 # Assume there is binary data.
@@ -161,15 +171,15 @@ will be used:
 
 =cut
 
-has 'parser' => (
+has 'csv' => (
     is         => 'ro',
     isa        => 'Text::CSV',
     lazy_build => 1,
 );
-sub _build_parser {
+sub _build_csv {
     my ($self) = @_;
 
-    my $options = clone( $self->parser_options() );
+    my $options = clone( $self->csv_options() );
 
     $options->{binary}    //= 1;
     $options->{auto_diag} //= 1;
@@ -216,7 +226,7 @@ sub _build_headers {
         my $header_lookup = {};
         my $new_headers = [];
         foreach my $header (@$headers) {
-            $header = _format_string( $header );
+            $header = $self->_format_string( $header );
 
             if ($header_lookup->{$header}) {
                 my $new_header;
@@ -239,7 +249,7 @@ sub _build_headers {
 }
 
 sub _format_string {
-    my ($str) = @_;
+    my ($self, $str) = @_;
     $str = lc( $str );
     $str =~ s{-}{_}g;
     $str =~ s{[^a-z_0-9-]+}{_}gs;
@@ -320,17 +330,25 @@ and call the code with the $row hashref as the only argument.
 =cut
 
 sub _raw_process {
-    my ($self, $sub) = @_;
+    my ($self, $sub, $skip_headers) = @_;
 
     my $fh = $self->_fh();
-    my $csv = $self->parser();
+    my $csv = $self->csv();
     my $line = 0;
     my $skip_rows = $self->skip_rows();
     my $max_rows = $self->max_rows();
+    my $first_row = 1;
+
     while (my $row = $csv->getline( $fh )) {
         $line ++;
         next if any { $line == $_ } @$skip_rows;
         last if $max_rows and $line > $max_rows;
+
+        if ($first_row) {
+            $first_row = 0;
+            next if $self->_headers_from_csv() and $skip_headers;
+        }
+
         last if !$sub->($row, $line);
     }
 
@@ -341,15 +359,8 @@ sub process {
     my ($self, $sub) = @_;
 
     my $headers = $self->headers();
-    my $first_row = 1;
     $self->_raw_process(sub{
         my ($row, $line) = @_;
-
-        # Skip the first row if the headers came from the csv.
-        if ($first_row) {
-            $first_row = 0;
-            return 1 if $self->_headers_from_csv();
-        }
 
         croak 'number of value on line ' . $line . ' does not match the number of headers'
             if @$headers != @$row;
@@ -358,7 +369,7 @@ sub process {
         $sub->( $row );
 
         return 1;
-    });
+    }, 1);
 
     return;
 }
@@ -413,11 +424,22 @@ Additionally the following attributes may be set:
     fractional_length - The number of decimal digits in the value with the most decimal places.
     max               - The maximum number value found.
     min               - The minimum number value found.
-    unsigned          - A negative number was found.
+    signed            - A negative number was found.
+
+Each hash will also contain a 'header' key wich will contain the name of
+the header that is represents.
+
+This method is implemented as an attribute so that calls beyond the first
+will not re-scan the CSV file.
 
 =cut
 
-sub analyze {
+has 'analyze' => (
+    is         => 'ro',
+    isa        => 'ArrayRef[HashRef]',
+    lazy_build => 1,
+);
+sub _build_analyze {
     my ($self) = @_;
 
     my $types;
@@ -434,14 +456,14 @@ sub analyze {
             }
             elsif ($value =~ m{^(-?)(\d+)$}s) {
                 my ($dash, $left) = ($1, $2);
-                $type->{unsigned} = 1 if $dash;
+                $type->{signed} = 1 if $dash;
                 $type->{integer_length} = length($left+0);
                 $type->{integer} = 1;
                 $is_number = 1;
             }
             elsif ($value =~ m{^(-?)(\d+)\.(\d+)$}s) {
                 my ($dash, $left, $right) = ($1, $2, $3);
-                $type->{unsigned} = 1 if $dash;
+                $type->{signed} = 1 if $dash;
 
                 $left  = length($left+0);
                 $right = length($right);
@@ -549,7 +571,7 @@ sub process_csv {
     
     my $rows = slurp_csv(
         'file.csv',
-        { parser_options => {binary => 0} },
+        { csv_options => {binary => 0} },
     );
     foreach my $row (@$rows) {
         ...
