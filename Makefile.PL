@@ -31,7 +31,7 @@ my %WriteMakefileArgs = (
     'Text::CSV::Separator' => '0.20',
     'autodie' => '2.10'
   },
-  'VERSION' => '0.03',
+  'VERSION' => '0.04',
   'test' => {
     'TESTS' => 't/*.t'
   }

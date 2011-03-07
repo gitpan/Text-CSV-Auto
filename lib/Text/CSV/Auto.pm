@@ -1,6 +1,6 @@
 package Text::CSV::Auto;
 BEGIN {
-  $Text::CSV::Auto::VERSION = '0.03';
+  $Text::CSV::Auto::VERSION = '0.04';
 }
 use Moose;
 
@@ -13,15 +13,34 @@ analysis of CSV files.
 
     use Text::CSV::Auto;
     
-    my $csv = Text::CSV::Auto->new( file => 'path/to/file.csv' );
+    my $auto = Text::CSV::Auto->new( 'path/to/file.csv' );
     
-    while (my $row = $csv->row()) {
+    $auto->process(sub{
+        my ($row) = @_;
         ...
-    }
+    });
     
-    $rows = $csv->slurp();
+    $rows = $auto->slurp();
     
-    my $info = $csv->analysis();
+    my $info = $auto->analyze();
+
+If you need to set some attributes:
+
+    my $auto = Text::CSV::Auto->new(
+        file     => 'path/to/file.csv',
+        max_rows => 100,
+    );
+
+There is also a non-OO interface:
+
+    use Text::CSV::Auto qw( slurp_csv process_csv );
+    
+    process_csv('path/to/file.csv', sub{
+        my ($row) = @_;
+        ...
+    });
+    
+    my $rows = slurp_csv('path/to/file.csv');
 
 =head1 DESCRIPTION
 
@@ -36,6 +55,8 @@ used and set some good default options for processing the file.
 
 The name CSV is misleading as any variable-width delimited file should
 be fine including TSV files and pipe "|" delimited files to name a few.
+
+Please install L<Text::CSV_XS> to get the best possible performance.
 
 =cut
 
@@ -174,25 +195,22 @@ like to use.
 has 'headers' => (
     is         => 'ro',
     isa        => 'ArrayRef[Str]',
-);
-has '_final_headers' => (
-    is         => 'ro',
-    isa        => 'ArrayRef[Str]',
     lazy_build => 1,
 );
-sub _build__final_headers {
+has '_headers_from_csv' => (
+    is      => 'rw',
+    isa     => 'Bool',
+    default => 0,
+);
+sub _build_headers {
     my ($self) = @_;
 
-    my $headers = $self->headers();
-    if ($headers) {
-        $headers = clone( $headers );
-    }
-    else {
-        $self->_raw_process(sub{
-            ($headers) = @_;
-            return;
-        });
-    }
+    my $headers;
+
+    $self->_raw_process(sub{
+        ($headers) = @_;
+        return;
+    });
 
     if ($self->format_headers()) {
         my $header_lookup = {};
@@ -214,6 +232,8 @@ sub _build__final_headers {
         }
         $headers = $new_headers;
     }
+
+    $self->_headers_from_csv( 1 );
 
     return $headers;
 }
@@ -240,9 +260,8 @@ The headers would be transformed too:
 
     parent_name,parent_age,child_name,child_age,child_name_2,child_age_2
 
-This option is enabled by default.  You can turn it off if you want:
-
-    format_headers => 0
+This defaults to on and does not affect custom headers set via the
+headers attribute.
 
 =cut
 
@@ -290,6 +309,14 @@ has 'max_rows' => (
 
 =head2 process
 
+    $auto->process(sub{
+        my ($row) = @_;
+        ...
+    });
+
+Given a code reference, this will iterate over each row in the CSV
+and call the code with the $row hashref as the only argument.
+
 =cut
 
 sub _raw_process {
@@ -313,15 +340,15 @@ sub _raw_process {
 sub process {
     my ($self, $sub) = @_;
 
-    my $headers = $self->_final_headers();
+    my $headers = $self->headers();
     my $first_row = 1;
     $self->_raw_process(sub{
         my ($row, $line) = @_;
 
-        # Skip the first row if the headers came from the first row.
+        # Skip the first row if the headers came from the csv.
         if ($first_row) {
             $first_row = 0;
-            return 1 if !$self->headers();
+            return 1 if $self->_headers_from_csv();
         }
 
         croak 'number of value on line ' . $line . ' does not match the number of headers'
@@ -338,7 +365,7 @@ sub process {
 
 =head2 slurp
 
-    my $rows = $csv->slurp();
+    my $rows = $auto->slurp();
 
 Slurps up all of the rows in to an arrayref of row hashrefs and
 returns it.
@@ -397,7 +424,7 @@ sub analyze {
     $self->process(sub{
         my ($row) = @_;
 
-        foreach my $header (@{ $self->_final_headers() }) {
+        foreach my $header (@{ $self->headers() }) {
             my $type = $types->{$header} //= {};
             my $value = $row->{$header};
 
@@ -457,7 +484,7 @@ sub analyze {
 
     $types = [
         map { $types->{$_}->{header} = $_; $types->{$_} }
-        @{ $self->_final_headers() }
+        @{ $self->headers() }
     ];
 
     return $types;
