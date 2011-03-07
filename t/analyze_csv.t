@@ -2,7 +2,7 @@ use strict;
 use warnings;
 
 use Test::More;
-use Text::CSV::Auto qw( analyze_csv );
+use Text::CSV::Auto;
 
 my $expected = [
           {
@@ -37,7 +37,7 @@ my $expected = [
           {
             'integer' => 1,
             'min' => 5,
-            'undef' => 1,
+            'empty' => 1,
             'max' => 80,
             'integer_length' => 2,
             'header' => 'gsa_code'
@@ -45,7 +45,7 @@ my $expected = [
           {
             'integer' => 1,
             'min' => 40005013,
-            'undef' => 1,
+            'empty' => 1,
             'max' => 40080013,
             'integer_length' => 8,
             'header' => 'opm_code'
@@ -104,12 +104,14 @@ my $expected = [
           },
           {
             'mdy_date' => 1,
-            'undef' => 1,
+            'empty' => 1,
             'header' => 'date_edited'
           }
         ];
 
-my $info = analyze_csv('t/features.csv');
+my $auto = Text::CSV::Auto->new( 't/features.csv' );
+
+my $info = $auto->analyze();
 
 is_deeply(
     $info,

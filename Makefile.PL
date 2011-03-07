@@ -11,7 +11,10 @@ use ExtUtils::MakeMaker 6.31;
 my %WriteMakefileArgs = (
   'ABSTRACT' => 'Comprehensive and automatic loading, processing, and analysis of CSV files.',
   'AUTHOR' => 'Aran Deltac <bluefeet@gmail.com>',
-  'BUILD_REQUIRES' => {},
+  'BUILD_REQUIRES' => {
+    'Test::Exception' => '0.31',
+    'Test::More' => '0.96'
+  },
   'CONFIGURE_REQUIRES' => {
     'ExtUtils::MakeMaker' => '6.31'
   },
@@ -21,12 +24,14 @@ my %WriteMakefileArgs = (
   'NAME' => 'Text::CSV::Auto',
   'PREREQ_PM' => {
     'Clone' => '0.31',
+    'IO' => '1.25',
     'List::MoreUtils' => '0.30',
+    'Moose' => '1.24',
+    'Text::CSV' => '1.21',
     'Text::CSV::Separator' => '0.20',
-    'Text::CSV_XS' => '0.80',
     'autodie' => '2.10'
   },
-  'VERSION' => '0.02',
+  'VERSION' => '0.03',
   'test' => {
     'TESTS' => 't/*.t'
   }

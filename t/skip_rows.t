@@ -13,7 +13,7 @@ splice( @$expected_ids, 1, 2 );
 
 my $ids = [
     map { $_->{feature_id} }
-    @{ slurp_csv('t/features.csv',{max_rows=>5, skip_rows=>[2,3]}) }
+    @{ slurp_csv('t/features.csv',{max_rows=>5, skip_rows=>[3,4]}) }
 ];
 
 is_deeply(

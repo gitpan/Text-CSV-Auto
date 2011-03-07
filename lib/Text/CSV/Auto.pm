@@ -1,7 +1,8 @@
 package Text::CSV::Auto;
 BEGIN {
-  $Text::CSV::Auto::VERSION = '0.02';
+  $Text::CSV::Auto::VERSION = '0.03';
 }
+use Moose;
 
 =head1 NAME
 
@@ -10,70 +11,24 @@ analysis of CSV files.
 
 =head1 SYNOPSIS
 
-Given a CSV file like this:
-
-    name,age,gender
-    Jill,44,f
-    Bob,32,m
-    Joe,51,m
-    June,23,f
-
-You could do this:
-
-    use Text::CSV::Auto qw( process_csv );
+    use Text::CSV::Auto;
     
-    process_csv(
-        'path/to/file.csv',
-        sub{
-            my ($row) = @_;
-
-            print "$row->{name} is $row->{age} years old.\n";
-        },
-    );
-
-You can also slurp in all the rows in one giant array of hashes:
-
-    use Text::CSV::Auto qw( slurp_csv );
+    my $csv = Text::CSV::Auto->new( file => 'path/to/file.csv' );
     
-    my $rows = slurp_csv( 'path/to/file.csv' );
-    foreach my $row (@$rows) {
-        print "$row->{name} is $row->{age} years old.\n";
+    while (my $row = $csv->row()) {
+        ...
     }
-
-You can also get an analysis about the content of the file:
-
-    use Text::CSV::Auto qw( analyze_csv );
     
-    my $headers = analyze_csv( 'path/to/file.csv' );
-
-This will give you something like this:
-
-    [
-        {
-            header        => 'name',
-            string        => 1,
-            string_length => 4,
-        },
-        {
-            header          => 'age',
-            integer         => 1,
-            min             => 23,
-            max             => 51,
-            integer_length  => 2,
-        },
-        {
-            header        => 'gender',
-            string        => 1,
-            string_length => 1,
-        },
-    ]
+    $rows = $csv->slurp();
+    
+    my $info = $csv->analysis();
 
 =head1 DESCRIPTION
 
 This module provides utilities to quickly process and analyze CSV files
 with as little hassle as possible.
 
-The reliable and robust L<Text::CSV_XS> module is used for the actual
+The reliable and robust L<Text::CSV> module is used for the actual
 CSV parsing.  This module provides a simpler and smarter interface.  In
 most situations all you need to do is specify the filename of the file
 and this module will automatically figure out what kind of separator is
@@ -86,52 +41,194 @@ be fine including TSV files and pipe "|" delimited files to name a few.
 
 use feature ':5.10';
 
-use Text::CSV_XS;
+use Text::CSV;
 use Text::CSV::Separator qw( get_separator );
-use List::MoreUtils qw( zip );
+use List::MoreUtils qw( zip any );
 use autodie;
 use Carp qw( croak );
 use Clone qw( clone );
+use IO::File;
 
-use Exporter qw( import );
-our @EXPORT_OK = qw( process_csv slurp_csv analyze_csv );
+use Moose::Util::TypeConstraints;
 
-=head1 SUBROUTINES
+around BUILDARGS => sub {
+    my $orig = shift;
+    my $class = shift;
 
-=head2 process_csv
+    if (@_==1 and !ref($_[0])) {
+        return $class->$orig( file => $_[0] );
+    }
+    else {
+        return $class->$orig( @_ );
+    }
+};
 
-    process_csv(
-        $filename,
-        $options, # optional
-        $code_ref,
-    );
+=head1 ATTRIBUTES
 
-For each row that is found in the CSV it will be converted in to a hash
-and the code reference you pass will be executed with the row hashref as
-the first argument.
+=head2 file
 
-Options may be specified as a hashref.  Any options that L<Text::CSV_XS>
-supports, such as sep_char and binary, can be set.  Some sane options are
-set by default but can be overriden:
+This is the only required attribute and specifies the file name
+of the CSV file.
+
+=cut
+
+subtype 'TextCSVAutoFile'
+    => as 'Str'
+    => where { -f $_ }
+    => message { 'The specified file is not a file' };
+
+has 'file' => (
+    is       => 'ro',
+    isa      => 'TextCSVAutoFile',
+    required => 1,
+);
+
+sub _fh {
+    my ($self) = @_;
+    return IO::File->new( $self->file(), 'r' );
+}
+
+=head2 separator
+
+If you do not set this the separator will be automatically detected
+using L<Text::CSV::Separator>.
+
+=cut
+
+has 'separator' => (
+    is         => 'ro',
+    isa        => 'Str',
+    lazy_build => 1,
+);
+sub _build_separator {
+    my ($self) = @_;
+
+    my @chars = get_separator( path => $self->file() );
+    croak 'Unable to automatically detect the separator' if @chars != 1;
+
+    return $chars[0];
+}
+
+=head2 parser_options
+
+Set this to a hashref of extra options that you'd like to have
+passed down to the underlying L<Text::CSV> parser.
+
+Read the L<Text::CSV> docs to see the many options that it supports.
+
+=cut
+
+has 'parser_options' => (
+    is      => 'ro',
+    isa     => 'HashRef',
+    default => sub{ {} },
+);
+
+=head2 parser
+
+This contains an instance of the L<Text::CSV> object that is used
+to parse the CSV file.  You may pass in your own parser object.
+If you don't then one will be instantiated for you with the
+parser_options().
+
+If not set already in parser_options, the following defaults
+will be used:
 
     binary    => 1 # Assume there is binary data.
-    auto_diag => 2 # die() if there are any errors.
-    sep_char  => ... # Automatically detected.
+    auto_diag => 1 # die() if there are any errors.
+    sep_char  => $self->separator()
 
-Read the L<Text::CSV_XS> docs to see the many options that it supports.
+=cut
 
-There are additional options that can be set that affect how this module
-works.  Read below about the additional options that are supported:
+has 'parser' => (
+    is         => 'ro',
+    isa        => 'Text::CSV',
+    lazy_build => 1,
+);
+sub _build_parser {
+    my ($self) = @_;
 
-=head3 headers
+    my $options = clone( $self->parser_options() );
 
-By default headers are pulled from the first row in the CSV.  In some
-cases a CSV file does not have headers.  In these cases you should
-specify an arrayref of header names that you would like to use.
+    $options->{binary}    //= 1;
+    $options->{auto_diag} //= 1;
+    $options->{sep_char}  //= $self->separator();
+
+    return Text::CSV->new($options);
+}
+
+=head2 headers
+
+The headers as pulled from the first line of the CSV file,
+taking in to account skip_rows().  The format_headers() option
+may modifying the format of the headers.
+
+In some cases a CSV file does not have headers.  In these cases
+you should specify an arrayref of header names that you would
+like to use.
 
     headers => ['foo', 'bar']
 
-=head3 format_headers
+=cut
+
+has 'headers' => (
+    is         => 'ro',
+    isa        => 'ArrayRef[Str]',
+);
+has '_final_headers' => (
+    is         => 'ro',
+    isa        => 'ArrayRef[Str]',
+    lazy_build => 1,
+);
+sub _build__final_headers {
+    my ($self) = @_;
+
+    my $headers = $self->headers();
+    if ($headers) {
+        $headers = clone( $headers );
+    }
+    else {
+        $self->_raw_process(sub{
+            ($headers) = @_;
+            return;
+        });
+    }
+
+    if ($self->format_headers()) {
+        my $header_lookup = {};
+        my $new_headers = [];
+        foreach my $header (@$headers) {
+            $header = _format_string( $header );
+
+            if ($header_lookup->{$header}) {
+                my $new_header;
+                foreach my $num (2..100) {
+                    $new_header = $header . '_' . $num;
+                    last if !$header_lookup->{$new_header};
+                }
+                $header = $new_header;
+            }
+            $header_lookup->{$header} = 1;
+
+            push @$new_headers, $header;
+        }
+        $headers = $new_headers;
+    }
+
+    return $headers;
+}
+
+sub _format_string {
+    my ($str) = @_;
+    $str = lc( $str );
+    $str =~ s{-}{_}g;
+    $str =~ s{[^a-z_0-9-]+}{_}gs;
+    $str =~ s{^_*(.+?)_*$}{$1};
+    $str =~ s{_{2,}}{_}g;
+    return $str;
+}
+
+=head2 format_headers
 
 When the first row is pulled from the CSV to determine the headers
 this option will cause them to be formatted to be more consistent
@@ -147,7 +244,15 @@ This option is enabled by default.  You can turn it off if you want:
 
     format_headers => 0
 
-=head3 skip_rows
+=cut
+
+has 'format_headers' => (
+    is      => 'ro',
+    isa     => 'Bool',
+    default => 1,
+);
+
+=head2 skip_rows
 
 An arrayref of row numbers to skip can be specified.  This is useful for
 CSV files that contain ancillary rows that you don't want to be processed.
@@ -155,14 +260,241 @@ For example, you could ignore the 2nd row and the 5th through the 10th rows:
 
     skip_rows => [2, 5..10]
 
-=head3 max_rows
+Do not that the headers are pulled *after* taking in to account skip_rows.
+So, for example, doing skip_row=>[1] will cause the headers to be pulled
+from the second row.
+
+=cut
+
+has 'skip_rows' => (
+    is      => 'ro',
+    isa     => 'ArrayRef[Int]',
+    default => sub{ [] },
+);
+
+=head2 max_rows
 
 By default all rows will be processed.  In some cases you only want to
 run a sample set of rows.  This option will limit the number of rows
-processed.  This is most useful for when you are using analyze_csv() on
+processed.  This is most useful for when you are using analyze() on
 a very large file where you don't need every row to be analyzed.
 
-    max_rows => 50
+=cut
+
+has 'max_rows' => (
+    is  => 'ro',
+    isa => 'Int',
+);
+
+=head1 METHODS
+
+=head2 process
+
+=cut
+
+sub _raw_process {
+    my ($self, $sub) = @_;
+
+    my $fh = $self->_fh();
+    my $csv = $self->parser();
+    my $line = 0;
+    my $skip_rows = $self->skip_rows();
+    my $max_rows = $self->max_rows();
+    while (my $row = $csv->getline( $fh )) {
+        $line ++;
+        next if any { $line == $_ } @$skip_rows;
+        last if $max_rows and $line > $max_rows;
+        last if !$sub->($row, $line);
+    }
+
+    return;
+}
+
+sub process {
+    my ($self, $sub) = @_;
+
+    my $headers = $self->_final_headers();
+    my $first_row = 1;
+    $self->_raw_process(sub{
+        my ($row, $line) = @_;
+
+        # Skip the first row if the headers came from the first row.
+        if ($first_row) {
+            $first_row = 0;
+            return 1 if !$self->headers();
+        }
+
+        croak 'number of value on line ' . $line . ' does not match the number of headers'
+            if @$headers != @$row;
+
+        $row = { zip @$headers, @$row };
+        $sub->( $row );
+
+        return 1;
+    });
+
+    return;
+}
+
+=head2 slurp
+
+    my $rows = $csv->slurp();
+
+Slurps up all of the rows in to an arrayref of row hashrefs and
+returns it.
+
+=cut
+
+sub slurp {
+    my ($self) = @_;
+
+    my @rows;
+    $self->process(sub{
+        my ($row) = @_;
+        push @rows, $row;
+    });
+
+    return \@rows;
+}
+
+=head2 analyze
+
+    my $info = $auto->analyze();
+
+Returns an array of hashes where each hash represents a header in
+the CSV file.  The hash will contain a lot of different meta data
+about the data that was found in the rows for that header.
+
+It is possible that within the same header that multiple data types are found,
+such as finding a integer value on one row then a string value on another row
+within the same header.  In a case like this both the integer=>1 and string=>1
+flags would be set.
+
+The possible data types are:
+
+    empty    - The field was blank.
+    integer  - Looked like a non-fractional number.
+    decimal  - Looked like a fractional number.
+    mdy_date - A date in the format of MM/DD/YYYY.
+    ymd_date - A date in the format of YYYY-MM-DD.
+    string   - Anything else.
+
+Additionally the following attributes may be set:
+
+    string_length     - The length of the largest string value.
+    integer_length    - The number of integer digits in the largest number.
+    fractional_length - The number of decimal digits in the value with the most decimal places.
+    max               - The maximum number value found.
+    min               - The minimum number value found.
+    unsigned          - A negative number was found.
+
+=cut
+
+sub analyze {
+    my ($self) = @_;
+
+    my $types;
+    $self->process(sub{
+        my ($row) = @_;
+
+        foreach my $header (@{ $self->_final_headers() }) {
+            my $type = $types->{$header} //= {};
+            my $value = $row->{$header};
+
+            my $is_number;
+            if ($value ~~ '') {
+                $type->{empty} = 1;
+            }
+            elsif ($value =~ m{^(-?)(\d+)$}s) {
+                my ($dash, $left) = ($1, $2);
+                $type->{unsigned} = 1 if $dash;
+                $type->{integer_length} = length($left+0);
+                $type->{integer} = 1;
+                $is_number = 1;
+            }
+            elsif ($value =~ m{^(-?)(\d+)\.(\d+)$}s) {
+                my ($dash, $left, $right) = ($1, $2, $3);
+                $type->{unsigned} = 1 if $dash;
+
+                $left  = length($left+0);
+                $right = length($right);
+
+                $type->{integer_length}  //= 0;
+                $type->{fractional_length} //= 0;
+
+                $type->{integer_length}  = $left if $left > $type->{integer_length};
+                $type->{fractional_length} = $right if $right > $type->{fractional_length};
+
+                $type->{decimal} = 1;
+                $is_number = 1;
+            }
+            elsif ($value =~ m{^\d\d/\d\d/\d\d\d\d}) {
+                $type->{mdy_date} = 1;
+            }
+            elsif ($value =~ m{^\d\d\d\d-\d\d-\d\d}) {
+                $type->{ymd_date} = 1;
+            }
+            else {
+                my $length = length( $value );
+
+                $type->{string_length} //= 0;
+                $type->{string_length} = $length if $length > $type->{string_length};
+
+                $type->{string} = 1;
+            }
+
+            if ($is_number) {
+                $value += 0;
+
+                $type->{min} //= $value;
+                $type->{max} //= $value;
+
+                $type->{min} = $value if $value < $type->{min};
+                $type->{max} = $value if $value > $type->{max};
+            }
+        }
+    });
+
+    $types = [
+        map { $types->{$_}->{header} = $_; $types->{$_} }
+        @{ $self->_final_headers() }
+    ];
+
+    return $types;
+}
+
+=head1 FUNCTIONS
+
+A non-OO interface is provided for simple cases.
+
+=cut
+
+use Exporter qw( import );
+our @EXPORT_OK = qw( process_csv slurp_csv );
+
+=head2 process_csv
+
+    use Text::CSV::Auto qw( process_csv );
+    
+    process_csv(
+        'file.csv',
+        { max_rows => 20 },
+        sub{
+            my ($row) = @_;
+            ...
+        },
+    );
+
+The first argument is the filename of the CSV file, the second argument is a hashref
+of options that can be any of the ATTRIBUTES in the OO interface.  The third argument
+is a code reference which will be executed for each row.
+
+The second argument is optional.  You can just leave it out, like this:
+
+    process_csv( 'file.csv', sub{
+        my ($row) = @_;
+        ...
+    });
 
 =cut
 
@@ -174,288 +506,73 @@ sub process_csv {
         $options = {};
     }
 
-    $options = _validate( $file, $options );
-    delete( $options->{_validated} );
+    my $auto = __PACKAGE__->new(
+        file => $file,
+        %$options,
+    );
 
-    my $headers        = delete( $options->{headers} );
-    my $format_headers = delete( $options->{format_headers} ) // 1;
-    my $skip_rows      = delete( $options->{skip_rows} ) // [];
-    my $max_rows       = delete( $options->{max_rows} );
-
-    $skip_rows = { map { $_=>1 } @$skip_rows };
-
-    my $csv = Text::CSV_XS->new($options);
-
-    my $rows = [];
-    my $row_number = 0;
-    open( my $fh, '<', $file );
-    while (my $row = $csv->getline($fh)) {
-        $row_number ++;
-        next if $skip_rows->{$row_number};
-
-        if (!$headers) {
-            $headers = $row;
-            $headers = _format_headers( $headers ) if $format_headers;
-            $row_number --;
-            next;
-        }
-
-        next if (@$row == 1) and $row->[0] ~~ '';
-
-        if (@$headers != @$row) {
-            croak 'Header count does not match row #' . $row_number;
-        }
-
-        $row = { zip @$headers, @$row };
-
-        $sub->( $row, $headers );
-
-        last if $max_rows and $row_number >= $max_rows;
-    }
-    $csv->eof() or $csv->error_diag();
-    close( $fh );
+    $auto->process( $sub );
 
     return;
 }
 
 =head2 slurp_csv
 
+    use Text::CSV::Auto qw( slurp_csv );
+    
     my $rows = slurp_csv(
-        $filename,
-        $options, # optional
+        'file.csv',
+        { parser_options => {binary => 0} },
     );
+    foreach my $row (@$rows) {
+        ...
+    }
 
-Specify a filename and all the rows will be returned as an array of hashes.
-
-Supports the exact same options as process_csv().
+Just like process_csv, the first option is required and the second is optional.
 
 =cut
 
 sub slurp_csv {
     my ($file, $options) = @_;
 
-    $options = _validate( $file, $options );
+    $options ||= {};
 
-    my $rows = [];
-    process_csv(
-        $file,
-        $options,
-        sub{
-            my ($row) = @_;
-            push @$rows, $row;
-        },
+    my $auto = __PACKAGE__->new(
+        file => $file,
+        %$options,
     );
 
-    return $rows;
+    return $auto->slurp();
 }
 
-=head2 analyze_csv
-
-    my $info = analyze_csv(
-        $filename,
-        $options, # optional
-        $sub, # optional
-    );
-
-Returns an array of hashes where each hash represents a header in
-the CSV file.  The hash will contain a lot of different meta data
-about the data that was found in the rows for that header.
-
-It is possible that within the same header that multiple data types are found,
-such as finding a integer value on one row then a string value on another row
-within the same header.  In a case like this both the integer=>1 and string=>1
-flags would be set.
-
-Supports the exact same options as process_csv().
-
-The meta data can contain any of the follow values:
-
-=head3 string => 1
-
-A value did not look like a number.
-
-=head3 string_length => ...
-
-The length of the largest value.
-
-=head3 integer => 1
-
-A value looked like a integer (non-decimal number).
-
-=head3 integer_length => ...
-
-The number of integer digits in the largest value.
-
-=head3 decimal => 1
-
-A value looked like a decimal.
-
-=head3 fractional_length => ...
-
-The number of decimal digits in the value with the most decimal places.
-
-=head3 max => ...
-
-The maximum number value found.
-
-=head3 min => ...
-
-The minimum number value found.
-
-=head3 mdy_date => 1
-
-A value had the format of "MM/DD/YYYY".
-
-=head3 ymd_date => 1
-
-A value had the format of "YYYY-MM-DD".
-
-=head3 unsigned => 1
-
-A negative number was found.
-
-=head3 undef => 1
-
-An empty value was found.
-
-=cut
-
-sub analyze_csv {
-    my ($file, $options) = @_;
-
-    $options = _validate( $file, $options );
-
-    my $types;
-    my $headers;
-    process_csv(
-        $file,
-        $options,
-        sub{
-            my ($row, $row_headers) = @_;
-            $headers //= $row_headers;
-
-            foreach my $header (@$headers) {
-                my $type = $types->{$header} //= {};
-                my $value = $row->{$header};
-
-                my $is_number;
-                if ($value ~~ '') {
-                    $type->{undef} = 1;
-                }
-                elsif ($value =~ m{^(-?)(\d+)$}s) {
-                    my ($dash, $left) = ($1, $2);
-                    $type->{unsigned} = 1 if $dash;
-                    $type->{integer_length} = length($left+0);
-                    $type->{integer} = 1;
-                    $is_number = 1;
-                }
-                elsif ($value =~ m{^(-?)(\d+)\.(\d+)$}s) {
-                    my ($dash, $left, $right) = ($1, $2, $3);
-                    $type->{unsigned} = 1 if $dash;
-
-                    $left  = length($left+0);
-                    $right = length($right);
-
-                    $type->{integer_length}  //= 0;
-                    $type->{fractional_length} //= 0;
-
-                    $type->{integer_length}  = $left if $left > $type->{integer_length};
-                    $type->{fractional_length} = $right if $right > $type->{fractional_length};
-
-                    $type->{decimal} = 1;
-                    $is_number = 1;
-                }
-                elsif ($value =~ m{^\d\d/\d\d/\d\d\d\d}) {
-                    $type->{mdy_date} = 1;
-                }
-                elsif ($value =~ m{^\d\d\d\d-\d\d-\d\d}) {
-                    $type->{ymd_date} = 1;
-                }
-                else {
-                    my $length = length( $value );
-
-                    $type->{string_length} //= 0;
-                    $type->{string_length} = $length if $length > $type->{string_length};
-
-                    $type->{string} = 1;
-                }
-
-                if ($is_number) {
-                    $value += 0;
-
-                    $type->{min} //= $value;
-                    $type->{max} //= $value;
-
-                    $type->{min} = $value if $value < $type->{min};
-                    $type->{max} = $value if $value > $type->{max};
-                }
-            }
-        },
-    );
-
-    $types = [
-        map { $types->{$_}->{header} = $_; $types->{$_} }
-        @$headers
-    ];
-
-    return $types;
-}
-
-sub _validate {
-    my ($file, $options) = @_;
-
-    return $options if $options->{_validated};
-
-    croak 'A filename must be passed as the first argument' if !$file;
-    croak 'The file "' . $file . '" does not exist' if !-e $file;
-    croak 'The file name "' . $file . '" is not a file' if !-f $file;
-
-    $options = $options ? clone($options) : {};
-
-    $options->{auto_diag} //= 2;
-    $options->{binary} //= 1;
-
-    if (!$options->{sep_char}) {
-        my @chars = get_separator( path => $file );
-        croak 'Unable to automatically detect the sep_char' if @chars != 1;
-        ($options->{sep_char}) = @chars;
-    }
-
-    $options->{_validated} = 1;
-
-    return $options;
-}
-
-sub _format_headers {
-    my ($headers) = @_;
-
-    my $header_lookup = {};
-    my $new_headers = [];
-    foreach my $header (@$headers) {
-        $header = lc( $header );
-        $header =~ s{-}{_}g;
-        $header =~ s{[^a-z_0-9-]+}{_}gs;
-        $header =~ s{^_*(.+?)_*$}{$1};
-        $header =~ s{_{2,}}{_}g;
-
-        if ($header_lookup->{$header}) {
-            my $new_header;
-            foreach my $num (2..100) {
-                $new_header = $header . '_' . $num;
-                last if !$header_lookup->{$new_header};
-            }
-            $header = $new_header;
-        }
-        $header_lookup->{$header} = 1;
-
-        push @$new_headers, $header;
-    }
-
-    return $new_headers;
-}
-
+__PACKAGE__->meta->make_immutable();
 1;
 __END__
+
+=head1 TODO
+
+=over
+
+=item *
+
+The date (not to mention time) handling in analyze is primitive
+and needs to be improved.  Possibly by providing a CLDR pattern that
+then can be used with L<DateTime::Format::CLDR>.
+
+=item *
+
+The original reason for creating analyze was to then take that
+meta data and produce table DDLs for relational databases.  This would
+then allow for an extremely simple way to take a csv file and pump
+it in to a DB to then run queries on.
+
+=item *
+
+Not sure the best way to do this, but it would be really nice if the
+quote character could be automatically detected, or detect that no
+quote character is used.
+
+=back
 
 =head1 AUTHOR
 
