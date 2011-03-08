@@ -1,6 +1,6 @@
 package Text::CSV::Auto::ExportToDB;
 BEGIN {
-  $Text::CSV::Auto::ExportToDB::VERSION = '0.05';
+  $Text::CSV::Auto::ExportToDB::VERSION = '0.06';
 }
 use Moose::Role;
 

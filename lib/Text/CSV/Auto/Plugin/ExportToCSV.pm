@@ -1,6 +1,6 @@
 package Text::CSV::Auto::Plugin::ExportToCSV;
 BEGIN {
-  $Text::CSV::Auto::Plugin::ExportToCSV::VERSION = '0.05';
+  $Text::CSV::Auto::Plugin::ExportToCSV::VERSION = '0.06';
 }
 use Moose::Role;
 

@@ -1,6 +1,6 @@
 package Text::CSV::Auto::ExportTo::CSV;
 BEGIN {
-  $Text::CSV::Auto::ExportTo::CSV::VERSION = '0.05';
+  $Text::CSV::Auto::ExportTo::CSV::VERSION = '0.06';
 }
 use Moose;
 

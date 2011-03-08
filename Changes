@@ -1,5 +1,9 @@
 Revision history for Perl extension Text::CSV::Auto.
 
+0.06      2011-03-08
+ - Support a "data_type" key in the analyze() results.  Needed for
+   ExportTo::MySQL to create the table definition.
+
 0.05      2011-03-07
  - Build out framework for exporters.
  - Created CSV exporter as a proof-of-concept.

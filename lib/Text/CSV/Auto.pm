@@ -1,6 +1,6 @@
 package Text::CSV::Auto;
 BEGIN {
-  $Text::CSV::Auto::VERSION = '0.05';
+  $Text::CSV::Auto::VERSION = '0.06';
 }
 use Moose;
 
@@ -417,6 +417,10 @@ The possible data types are:
     ymd_date - A date in the format of YYYY-MM-DD.
     string   - Anything else.
 
+There will also be a "data_type" key which will contain the most generalized
+data type from above.  For example, if string was found on one row and decimal
+was found on another data_type will contain string.
+
 Additionally the following attributes may be set:
 
     string_length     - The length of the largest string value.
@@ -508,6 +512,13 @@ sub _build_analyze {
         map { $types->{$_}->{header} = $_; $types->{$_} }
         @{ $self->headers() }
     ];
+
+    foreach my $type (@$types) {
+        foreach my $data_type (qw( ymd_date mdy_date decimal integer )) {
+            $type->{data_type} = $data_type if $type->{$data_type};
+        }
+        $type->{data_type} ||= 'string';
+    }
 
     return $types;
 }
